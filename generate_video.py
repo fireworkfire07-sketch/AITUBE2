@@ -1,14 +1,13 @@
-
 import os
 import json
+import re
 import random
 import hashlib
 import requests
 import subprocess
 from pathlib import Path
 
-# ── Config ──────────────────────────────────────────────────────────────────
-API_KEY        = os.environ["GROQ_API_KEY"]   # OpenRouter key buraya geliyor
+API_KEY        = os.environ["GROQ_API_KEY"]
 OUTPUT_DIR     = Path("output")
 PROCESSED_FILE = Path("islenmis.txt")
 TOPICS_FILE    = Path("topics.txt")
@@ -19,27 +18,25 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 SYSTEM_PROMPT = """You are the head scriptwriter for a faceless YouTube channel about ancient wealth wisdom — King Solomon, biblical money principles, timeless financial secrets.
 
 HARD RULES:
-- Output ONLY a single valid JSON object. No markdown, no backticks, no extra text.
-- 100% original content. Never copy any existing channel's scripts or phrasing.
-- Do NOT quote scripture verbatim beyond ~10 words. Paraphrase everything.
+- Output ONLY a single valid JSON object. No markdown, no backticks, no extra text before or after.
+- No newlines or special control characters inside JSON string values. Use \\n only if needed.
+- 100% original content. Never copy any existing channel scripts.
+- Do NOT quote scripture verbatim beyond 10 words. Paraphrase everything.
 - No financial guarantees or get-rich-quick claims.
-- Write narration to be SPOKEN: short sentences, second person, calm, authoritative, lightly reverent rhythm.
-- Vary the opening line between videos. Do not start every script the same way.
+- Write narration to be SPOKEN: short sentences, second person, calm and authoritative tone.
 
-OUTPUT — exactly this JSON:
+OUTPUT — exactly this JSON structure:
 {
-  "title": "primary title, curiosity-gap, max 70 chars",
-  "alt_titles": ["two alternative titles"],
+  "title": "curiosity-gap title, max 70 chars",
+  "alt_titles": ["alternative title 1", "alternative title 2"],
   "hook": "1-2 sentences for the first 3 seconds",
-  "script": "full narration ~1400 words. Arc: hook -> Solomon's authority -> ONE principle -> why most people get it wrong -> how to apply it today in concrete steps -> reflective close -> soft subscribe CTA. Spoken style only.",
-  "description": "YouTube description: 2-line hook, short paragraph, 3-5 lowercase hashtags, then this exact line on its own: This video uses AI-assisted narration and visuals.",
-  "tags": ["8 relevant tags"],
+  "script": "full narration 1200-1400 words, spoken style only",
+  "description": "YouTube description 3-4 sentences then hashtags: #solomonwisdom #ancientwealth #biblicalmoney",
+  "tags": ["solomon", "wealth", "money", "wisdom", "biblical", "ancient", "finance", "rich"],
   "thumbnail_text": "2-4 punchy words",
-  "image_prompts": ["10 prompts, one per visual beat, each ending with: cinematic, warm gold and deep amber palette, ancient Jerusalem and royal opulence, volumetric golden light, painterly realism, 16:9, no on-screen text"],
+  "image_prompts": ["prompt 1 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 2 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 3 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 4 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 5 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 6 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 7 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 8 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 9 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text", "prompt 10 cinematic warm gold deep amber palette ancient Jerusalem volumetric golden light painterly realism 16:9 no text"],
   "pinned_comment": "engaging question to drive comments"
 }"""
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def load_processed():
     if PROCESSED_FILE.exists():
@@ -55,54 +52,64 @@ def pick_topic():
     topics = [t.strip() for t in TOPICS_FILE.read_text().splitlines() if t.strip()]
     remaining = [t for t in topics if t not in processed]
     if not remaining:
-        print("All topics processed. Add more to topics.txt")
+        print("All topics processed.")
         return None
     return random.choice(remaining)
 
+def clean_json(raw):
+    # Markdown fence temizle
+    raw = re.sub(r"```json\s*", "", raw)
+    raw = re.sub(r"```\s*", "", raw)
+    raw = raw.strip()
+    # JSON bloğunu bul
+    start = raw.find("{")
+    end   = raw.rfind("}") + 1
+    if start >= 0 and end > start:
+        raw = raw[start:end]
+    # Bozuk kontrol karakterlerini temizle
+    raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
+    return raw
+
 def generate_script(topic):
-    """OpenRouter API — llama-3.3-70b-versatile"""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/fireworkfire07-sketch/A-TUBE2",
+        "HTTP-Referer": "https://github.com/fireworkfire07-sketch/AITUBE2",
         "X-Title": "Solomon Wealth Channel"
     }
     payload = {
         "model": "meta-llama/llama-3.3-70b-instruct",
-        "temperature": 0.85,
+        "temperature": 0.75,
         "max_tokens": 4096,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps({
-                "topic": topic, "lang": "en", "target_words": 1400
-            })}
+            {"role": "user", "content": f"Topic: {topic}"}
         ]
     }
     r = requests.post(url, headers=headers, json=payload, timeout=120)
     r.raise_for_status()
-    raw = r.json()["choices"][0]["message"]["content"].strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
+    raw = r.json()["choices"][0]["message"]["content"]
+    raw = clean_json(raw)
     return json.loads(raw)
 
 def tts(text, out_path):
-    cmd = [
+    subprocess.run([
         "edge-tts",
         "--voice", "en-US-ChristopherNeural",
         "--rate",  "-10%",
         "--pitch", "-2Hz",
         "--text",  text,
         "--write-media", str(out_path),
-    ]
-    subprocess.run(cmd, check=True)
+    ], check=True)
 
-def get_audio_duration(path):
-    result = subprocess.run(
+def get_duration(path):
+    r = subprocess.run(
         ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
         capture_output=True, text=True, check=True
     )
-    return float(result.stdout.strip())
+    return float(r.stdout.strip())
 
 def download_image(prompt, idx, folder):
     seed = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % 99999
@@ -113,53 +120,11 @@ def download_image(prompt, idx, folder):
     p.write_bytes(r.content)
     return p
 
-def make_ass(audio_path, ass_path):
-    """faster-whisper ile kelime-kelime ASS altyazı"""
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError:
-        print("faster-whisper not installed, skipping subtitles")
-        return False
-
-    model = WhisperModel("small", device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(str(audio_path), word_timestamps=True)
-
-    lines = [
-        "[Script Info]",
-        "ScriptType: v4.00+",
-        "PlayResX: 1920",
-        "PlayResY: 1080",
-        "",
-        "[V4+ Styles]",
-        "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
-        "Style: Default,Arial,56,&H00D4A843,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,60,60,80,1",
-        "",
-        "[Events]",
-        "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
-    ]
-
-    def ts(s):
-        h = int(s // 3600)
-        m = int((s % 3600) // 60)
-        sc = s % 60
-        return f"{h}:{m:02d}:{sc:05.2f}"
-
-    for seg in segments:
-        lines.append(
-            f"Dialogue: 0,{ts(seg.start)},{ts(seg.end)},Default,,0,0,0,,{seg.text.strip()}"
-        )
-
-    Path(ass_path).write_text("\n".join(lines), encoding="utf-8")
-    return True
-
-def build_video(images, audio_path, ass_path, out_path, duration):
+def build_video(images, audio_path, out_path, duration):
     per_img = duration / len(images)
-    inputs = []
+    inputs  = []
     for img in images:
         inputs += ["-loop", "1", "-t", str(per_img), "-i", str(img)]
-
-    has_music = MUSIC_FILE.exists()
-    music_inputs = ["-stream_loop", "-1", "-i", str(MUSIC_FILE)] if has_music else []
 
     zooms = [
         "zoompan=z='min(zoom+0.0008,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
@@ -167,43 +132,25 @@ def build_video(images, audio_path, ass_path, out_path, duration):
         "zoompan=z='min(zoom+0.0008,1.12)':x='min(iw*0.15,iw/2-(iw/zoom/2))':y='ih/2-(ih/zoom/2)'",
     ]
 
-    filter_parts = []
+    parts = []
     for i in range(len(images)):
         z = zooms[i % len(zooms)]
-        filter_parts.append(
-            f"[{i}:v]{z}:d={int(per_img*25)}:s=1920x1080:fps=25,setsar=1[v{i}]"
-        )
+        parts.append(f"[{i}:v]{z}:d={int(per_img*25)}:s=1920x1080:fps=25,setsar=1[v{i}]")
 
     concat_in = "".join(f"[v{i}]" for i in range(len(images)))
-    filter_parts.append(f"{concat_in}concat=n={len(images)}:v=1:a=0[base]")
+    parts.append(f"{concat_in}concat=n={len(images)}:v=1:a=0[vout]")
 
-    if Path(ass_path).exists():
-        filter_parts.append(f"[base]ass={ass_path}[vout]")
-        vout = "[vout]"
-    else:
-        vout = "[base]"
+    vi = len(images)
+    parts.append(f"[{vi}:a]volume=1.0[aout]")
 
-    filter_complex = ";".join(filter_parts)
-
-    voice_idx = len(images)
-    if has_music:
-        music_idx = len(images) + 1
-        filter_complex += (
-            f";[{voice_idx}:a]volume=1.0[voice]"
-            f";[{music_idx}:a]volume=0.10[music]"
-            ";[voice][music]amix=inputs=2:duration=first[aout]"
-        )
-        aout = "[aout]"
-    else:
-        filter_complex += f";[{voice_idx}:a]volume=1.0[aout]"
-        aout = "[aout]"
+    fc = ";".join(parts)
 
     cmd = (
         ["ffmpeg", "-y"]
-        + inputs + music_inputs
+        + inputs
         + ["-i", str(audio_path)]
-        + ["-filter_complex", filter_complex]
-        + ["-map", vout, "-map", aout]
+        + ["-filter_complex", fc]
+        + ["-map", "[vout]", "-map", "[aout]"]
         + ["-c:v", "libx264", "-preset", "fast", "-crf", "22"]
         + ["-c:a", "aac", "-b:a", "192k"]
         + ["-af", "loudnorm=I=-14:LRA=11:TP=-1.5"]
@@ -211,8 +158,6 @@ def build_video(images, audio_path, ass_path, out_path, duration):
         + [str(out_path)]
     )
     subprocess.run(cmd, check=True)
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     topic = pick_topic()
@@ -224,36 +169,32 @@ def main():
     work = OUTPUT_DIR / slug
     work.mkdir(exist_ok=True)
 
-    print("📝 Generating script via OpenRouter...")
+    print("📝 Generating script...")
     data = generate_script(topic)
     (work / "data.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
-    title       = data["title"]
-    script_text = data["hook"] + "\n\n" + data["script"]
+    title         = data["title"]
+    script_text   = data["hook"] + "\n\n" + data["script"]
     image_prompts = data["image_prompts"]
     print(f"📺 Title: {title}")
 
-    print("🎙️  Generating voice...")
+    print("🎙️  Voice...")
     audio_path = work / "voice.mp3"
     tts(script_text, audio_path)
-    duration = get_audio_duration(audio_path)
-    print(f"⏱️  Duration: {duration:.1f}s")
+    duration = get_duration(audio_path)
+    print(f"⏱️  {duration:.1f}s")
 
-    print("🖼️  Downloading images...")
+    print("🖼️  Images...")
     img_folder = work / "images"
     img_folder.mkdir(exist_ok=True)
     images = []
     for i, prompt in enumerate(image_prompts[:10]):
-        print(f"   img {i+1}/10...")
+        print(f"   {i+1}/10")
         images.append(download_image(prompt, i, img_folder))
 
-    print("💬 Generating subtitles...")
-    ass_path = work / "subtitles.ass"
-    make_ass(audio_path, ass_path)
-
-    print("🎬 Rendering video...")
+    print("🎬 Rendering...")
     video_path = work / "final.mp4"
-    build_video(images, audio_path, str(ass_path), video_path, duration)
+    build_video(images, audio_path, video_path, duration)
 
     meta = {
         "title":       title,
@@ -263,8 +204,7 @@ def main():
     (work / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
     mark_processed(topic)
 
-    print(f"✅ Done! → {video_path}")
-    print(f"📌 Pinned comment: {data['pinned_comment']}")
+    print(f"✅ Done → {video_path}")
 
 if __name__ == "__main__":
     main()
