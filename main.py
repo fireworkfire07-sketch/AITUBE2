@@ -1,4 +1,4 @@
-import os, json, re, random, hashlib, asyncio, subprocess, glob
+import os, json, re, random, hashlib, asyncio, subprocess
 import requests
 from pathlib import Path
 import edge_tts
@@ -14,10 +14,9 @@ OUTPUT ONLY valid JSON. No markdown, no backticks, no control characters in stri
  "title": "max 70 char curiosity-gap title",
  "hook": "1-2 spoken sentences for the first 3 seconds",
  "script": "2200 word narration in spoken style, second person, calm authoritative tone, with smooth transitions between ideas, no repetition, building toward a strong conclusion",
-
  "description": "3 sentences then: #solomonwisdom #ancientwealth #wealthmindset #kingsolomon #money",
  "tags": ["solomon","wealth","money","wisdom","ancient","mindset","rich","success"],
- "image_prompts": ["scene 1, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 2, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 3, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 4, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 5, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 6, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 7, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 8, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text"]
+ "image_prompts": ["scene 1, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 2, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 3, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 4, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 5, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 6, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 7, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 8, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 9, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 10, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text"]
 }"""
 
 def pick_topic():
@@ -29,9 +28,9 @@ def pick_topic():
 def generate(topic):
     r = requests.post("https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {API_KEY}", "Content-Type":"application/json"},
-        json={"model":"meta-llama/llama-3.3-70b-instruct","temperature":0.7,"max_tokens":4096,
+        json={"model":"meta-llama/llama-3.3-70b-instruct","temperature":0.7,"max_tokens":8000,
               "messages":[{"role":"system","content":SYSTEM},{"role":"user","content":f"Topic: {topic}"}]},
-        timeout=120)
+        timeout=180)
     r.raise_for_status()
     raw = r.json()["choices"][0]["message"]["content"]
     raw = re.sub(r"```json|```","",raw)
@@ -50,17 +49,50 @@ def duration(p):
         "-of","default=noprint_wrappers=1:nokey=1",str(p)], capture_output=True, text=True, check=True)
     return float(r.stdout.strip())
 
+def make_subs(audio, ass_path):
+    """faster-whisper ile sesten kelime-kelime altyazi (ASS), videoya gomulur"""
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        print("  no whisper, skipping subs"); return False
+    model = WhisperModel("small", device="cpu", compute_type="int8")
+    segments, _ = model.transcribe(str(audio), word_timestamps=True)
+    head = ["[Script Info]","ScriptType: v4.00+","PlayResX: 1920","PlayResY: 1080","",
+        "[V4+ Styles]",
+        "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+        "Style: Default,Arial,64,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,2,80,80,120,1","",
+        "[Events]","Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text"]
+    def ts(s):
+        h=int(s//3600); m=int((s%3600)//60); sc=s%60
+        return f"{h}:{m:02d}:{sc:05.2f}"
+    lines=[]
+    for seg in segments:
+        words = getattr(seg,"words",None)
+        if not words:
+            lines.append(f"Dialogue: 0,{ts(seg.start)},{ts(seg.end)},Default,,0,0,0,,{seg.text.strip()}")
+            continue
+        for i in range(0,len(words),4):
+            grp = words[i:i+4]
+            txt = " ".join(w.word.strip() for w in grp)
+            lines.append(f"Dialogue: 0,{ts(grp[0].start)},{ts(grp[-1].end)},Default,,0,0,0,,{txt}")
+    Path(ass_path).write_text("\n".join(head+lines), encoding="utf-8")
+    return True
+
 def get_image(prompt, idx, folder):
     seed = int(hashlib.md5(prompt.encode()).hexdigest(),16)%99999
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}?width=1792&height=1008&seed={seed}&nologo=true"
     r = requests.get(url, timeout=60); r.raise_for_status()
     p = folder/f"img_{idx:02d}.jpg"; p.write_bytes(r.content); return p
 
-def build(images, audio, out, dur):
+def build(images, audio, ass_path, out, dur):
     n = len(images); per = dur/n; inp = []
     for img in images: inp += ["-loop","1","-t",str(per),"-i",str(img)]
     parts = [f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=25[v{i}]" for i in range(n)]
-    parts.append("".join(f"[v{i}]" for i in range(n))+f"concat=n={n}:v=1:a=0[vout]")
+    parts.append("".join(f"[v{i}]" for i in range(n))+f"concat=n={n}:v=1:a=0[cat]")
+    if Path(ass_path).exists():
+        parts.append(f"[cat]ass={ass_path}[vout]")
+    else:
+        parts.append("[cat]copy[vout]")
     parts.append(f"[{n}:a]volume=1.0[aout]")
     subprocess.run(["ffmpeg","-y"]+inp+["-i",str(audio),"-filter_complex",";".join(parts),
         "-map","[vout]","-map","[aout]","-c:v","libx264","-preset","fast","-crf","23",
@@ -95,17 +127,21 @@ def main():
     work = OUTPUT/topic[:40].replace(" ","_"); work.mkdir(exist_ok=True)
 
     print("Script..."); data = generate(topic)
-    print(f"Title: {data['title']}")
+    wc = len(data["script"].split())
+    print(f"Title: {data['title']}  ({wc} words)")
 
     print("Voice..."); audio = work/"voice.mp3"
     tts(data["hook"]+"\n\n"+data["script"], audio)
-    dur = duration(audio); print(f"  {dur:.0f}s")
+    dur = duration(audio); print(f"  {dur:.0f}s ({dur/60:.1f} min)")
+
+    print("Subtitles..."); ass = work/"subs.ass"
+    make_subs(audio, ass)
 
     print("Images..."); imgf = work/"img"; imgf.mkdir(exist_ok=True)
-    images = [get_image(p,i,imgf) for i,p in enumerate(data["image_prompts"][:8])]
+    images = [get_image(p,i,imgf) for i,p in enumerate(data["image_prompts"][:10])]
 
     print("Render..."); video = work/"final.mp4"
-    build(images, audio, video, dur)
+    build(images, audio, ass, video, dur)
 
     meta = {"title":data["title"],"description":data["description"],"tags":",".join(data["tags"])}
     print("Upload..."); upload(video, meta)
