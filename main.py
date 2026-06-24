@@ -7,32 +7,38 @@ def run():
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
     youtube = build('youtube', 'v3', developerKey=os.environ["YOUTUBE_API_KEY"])
 
-    # Kanalın ID'sini çözmek yerine direkt kanalın son videosunu alalım
-    res = youtube.search().list(part="snippet", channelId="UCdM8w565v56jG6H-V3Y958g", maxResults=1, order="date", type="video").execute()
+    # Kanal ID'si üzerinden doğrudan "uploads" listesini çekme denemesi
+    request = youtube.channels().list(part="contentDetails", id="UCdM8w565v56jG6H-V3Y958g")
+    response = request.execute()
     
-    if not res.get('items'):
-        print("Video bulunamadı, kanal ID'sini kontrol et.")
+    if not response.get('items'):
+        print("Kanal bulunamadı.")
         return
 
-    video_info = res['items'][0]['snippet']
-    video_id = res['items'][0]['id']['videoId']
-    title = video_info['title']
+    uploads_id = response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
     
-    context = f"Başlık: {title}"
+    # Uploads listesinden en son videoyu çek
+    video_request = youtube.playlistItems().list(part="snippet,contentDetails", playlistId=uploads_id, maxResults=1)
+    video_response = video_request.execute()
     
+    video_id = video_response['items'][0]['contentDetails']['videoId']
+    title = video_response['items'][0]['snippet']['title']
+    
+    print(f"Hedef Video: {title} ({video_id})")
+
+    # İçerik üretimi
     try:
-        # Transkripti dene
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
         full_text = " ".join([i['text'] for i in transcript])
-        context += f". Video İçeriği: {full_text[:5000]}"
+        context = full_text[:8000]
     except:
-        context += ". (Transkript kapalı, sadece başlığa göre analiz et.)"
+        context = f"Başlık: {title}. (Transkript çekilemedi.)"
 
     model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(f"{context}. Bu veriyi analiz et ve stoik, otoriter bir manifesto yaz.")
+    manifesto = model.generate_content(f"Video verisi: {context}. Bu içerikten stoik, otoriter ve etkileyici bir manifesto yaz.")
     
-    print(f"\n--- {title} - ANALİZ ---")
-    print(response.text)
+    print("\n--- TAM KAPSAMLI MANİFESTO ---")
+    print(manifesto.text)
 
 if __name__ == "__main__":
     run()
