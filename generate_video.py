@@ -1,27 +1,38 @@
-import os, json, re, random, hashlib, asyncio, subprocess
+import os, json, re, time, random, hashlib, asyncio, subprocess
 import requests
 from pathlib import Path
 import edge_tts
+from groq import Groq
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-API_KEY        = os.environ["GROQ_API_KEY"]
-OUTPUT_DIR     = Path("output")
+# ===================== AYARLAR =====================
+GROQ_MODEL = "openai/gpt-oss-120b"   # llama-3.3-70b 17 Haziran 2026'da kapandı
+VOICE      = "en-US-ChristopherNeural"
+PRIVACY    = "public"                # İLK TEST için "private" yap
+CATEGORY   = "22"                    # 22=People&Blogs, 27=Education
+# ===================================================
+
+client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+OUTPUT_DIR = Path("output")
 PROCESSED_FILE = Path("islenmis.txt")
-TOPICS_FILE    = Path("topics.txt")
+TOPICS_FILE = Path("topics.txt")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 SYSTEM_PROMPT = """You are a scriptwriter for a faceless YouTube channel about King Solomon and ancient wealth wisdom.
-
 OUTPUT ONLY a valid JSON object. No markdown, no backticks, no text outside the JSON.
 No control characters inside string values.
-
 {
-  "title": "max 70 char curiosity-gap title",
-  "hook": "1-2 spoken sentences for the first 3 seconds",
-  "script": "1200 word narration, spoken style, second person, calm authoritative tone",
-  "description": "3 sentence YouTube description then: #solomonwisdom #ancientwealth #biblicalmoney #kingsolomon #wealthtips",
-  "tags": ["solomon","wealth","money","wisdom","ancient","biblical","finance","rich"],
-  "thumbnail_text": "3 punchy words",
-  "image_prompts": ["scene 1, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 2, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 3, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 4, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 5, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 6, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 7, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 8, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text"]
+"title": "max 70 char curiosity-gap title",
+"hook": "1-2 spoken sentences for the first 3 seconds",
+"script": "1200 word narration, spoken style, second person, calm authoritative tone",
+"description": "3 sentence YouTube description then: #solomonwisdom #ancientwealth #biblicalmoney #kingsolomon #wealthtips",
+"tags": ["solomon","wealth","money","wisdom","ancient","biblical","finance","rich"],
+"thumbnail_text": "3 punchy words",
+"image_prompts": ["scene 1, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 2, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 3, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 4, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 5, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 6, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 7, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text","scene 8, ancient Jerusalem, warm gold light, painterly realism, 16:9, no text"]
 }"""
 
 def pick_topic():
@@ -37,17 +48,14 @@ def mark_processed(topic):
         f.write(topic + "\n")
 
 def generate_script(topic):
-    r = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json",
-                 "HTTP-Referer": "https://github.com/fireworkfire07-sketch/AITUBE2"},
-        json={"model": "meta-llama/llama-3.3-70b-instruct", "temperature": 0.7, "max_tokens": 4096,
-              "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                           {"role": "user", "content": f"Topic: {topic}"}]},
-        timeout=120
+    resp = client.chat.completions.create(
+        model=GROQ_MODEL,
+        temperature=0.7,
+        max_tokens=8192,
+        messages=[{"role": "system", "content": SYSTEM_PROMPT},
+                  {"role": "user", "content": f"Topic: {topic}"}],
     )
-    r.raise_for_status()
-    raw = r.json()["choices"][0]["message"]["content"]
+    raw = resp.choices[0].message.content
     raw = re.sub(r"```json|```", "", raw).strip()
     s = raw.find("{"); e = raw.rfind("}") + 1
     raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw[s:e])
@@ -55,7 +63,7 @@ def generate_script(topic):
 
 def tts(text, out_path):
     async def _run():
-        comm = edge_tts.Communicate(text, voice="en-US-ChristopherNeural", rate="-10%", pitch="-2Hz")
+        comm = edge_tts.Communicate(text, voice=VOICE, rate="-10%", pitch="-2Hz")
         await comm.save(str(out_path))
     asyncio.run(_run())
 
@@ -67,9 +75,20 @@ def get_duration(path):
 
 def download_image(prompt, idx, folder):
     seed = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % 99999
-    url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}?width=1792&height=1008&seed={seed}&nologo=true"
-    r = requests.get(url, timeout=60); r.raise_for_status()
-    p = folder / f"img_{idx:02d}.jpg"; p.write_bytes(r.content)
+    url = (f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
+           f"?width=1792&height=1008&seed={seed}&nologo=true&model=flux")
+    p = folder / f"img_{idx:02d}.jpg"
+    for attempt in range(4):
+        try:
+            r = requests.get(url, timeout=90)
+            if r.status_code == 200 and len(r.content) > 5000:
+                p.write_bytes(r.content); return p
+        except Exception as ex:
+            print(f"  img {idx} retry {attempt+1}: {ex}")
+        time.sleep(5 * (attempt + 1))
+    # tüm denemeler başarısızsa düz renk kare (pipeline çökmesin)
+    subprocess.run(["ffmpeg","-y","-f","lavfi","-i","color=c=0x1a1208:s=1792x1008",
+                    "-frames:v","1",str(p)], check=True)
     return p
 
 def build_video(images, audio, out, duration):
@@ -80,7 +99,8 @@ def build_video(images, audio, out, duration):
         inputs += ["-loop","1","-t",str(per),"-i",str(img)]
     parts = []
     for i in range(n):
-        parts.append(f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=25[v{i}]")
+        parts.append(f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=increase,"
+                     f"crop=1920:1080,setsar=1,fps=25[v{i}]")
     cin = "".join(f"[v{i}]" for i in range(n))
     parts.append(f"{cin}concat=n={n}:v=1:a=0[vout]")
     parts.append(f"[{n}:a]volume=1.0[aout]")
@@ -91,6 +111,29 @@ def build_video(images, audio, out, duration):
          "-c:v","libx264","-preset","fast","-crf","23",
          "-c:a","aac","-b:a","192k","-r","25","-pix_fmt","yuv420p",
          str(out)], check=True)
+
+def upload_youtube(video_path, title, description, tags):
+    creds = Credentials(
+        None,
+        refresh_token=os.environ["YT_REFRESH_TOKEN"],
+        client_id=os.environ["YT_CLIENT_ID"],
+        client_secret=os.environ["YT_CLIENT_SECRET"],
+        token_uri="https://oauth2.googleapis.com/token",
+    )
+    creds.refresh(Request())  # token'ı erken doğrula
+    yt = build("youtube", "v3", credentials=creds)
+    body = {
+        "snippet": {"title": title[:95], "description": description,
+                    "tags": tags, "categoryId": CATEGORY},
+        "status": {"privacyStatus": PRIVACY, "selfDeclaredMadeForKids": False},
+    }
+    media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True)
+    req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
+    resp = None
+    while resp is None:
+        _, resp = req.next_chunk()
+    print(f"Uploaded: https://youtu.be/{resp['id']}")
+    return resp["id"]
 
 def main():
     topic = pick_topic()
@@ -122,13 +165,13 @@ def main():
     print("Rendering...")
     video = work / "final.mp4"
     build_video(images, audio, video, duration)
-    (work/"meta.json").write_text(json.dumps({
-        "title": data["title"],
-        "description": data["description"],
-        "tags": ",".join(data["tags"])
-    }, ensure_ascii=False))
-    mark_processed(topic)
-    print(f"Done: {video}")
+
+    description = data["description"] + "\n\nThis video was created using AI tools."
+    print("Uploading...")
+    upload_youtube(video, data["title"], description, data["tags"])
+
+    mark_processed(topic)   # SADECE yükleme başarılıysa işaretle
+    print("Done.")
 
 if __name__ == "__main__":
     main()
