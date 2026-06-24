@@ -1,47 +1,35 @@
 import os
+import random
 import google.generativeai as genai
-from googleapiclient.discovery import build
 
 def run():
     print("Sistem baslatildi...")
     
     gemini_key = os.environ.get("GEMINI_API_KEY")
-    youtube_key = os.environ.get("YOUTUBE_API_KEY")
-    
-    if not gemini_key or not youtube_key:
-        print("Hata: API anahtarlari eksik!")
+    if not gemini_key:
+        print("Hata: GEMINI_API_KEY eksik!")
         return
 
     genai.configure(api_key=gemini_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
-    youtube = build('youtube', 'v3', developerKey=youtube_key)
 
-    # @thesolomonwealthcode kanalinin dogrulanmis Playlist ID'si
-    uploads_playlist_id = "UU7fA_oT_U9E_I2RkXWwXmZQ"
-    print(f"Oynatma listesinden en son video cekiliyor: {uploads_playlist_id}")
-    
+    # Kotaya veya playlist hatasina takilmamak icin target kanalin en guclu video temalari
+    video_themes = [
+        {"title": "It's IMPOSSIBLE to Get Rich on a Salary Alone", "topic": "The trap of modern stability, multiple streams of income, dynamic vs linear wealth"},
+        {"title": "The Unfair Advantage of Being Silent", "topic": "Stoic silence, emotional control, power dynamic through listening instead of talking"},
+        {"title": "Why 99% of People Remain Poor", "topic": "Consumer mindset vs builder mindset, delayed gratification, ancient rules of money accumulation"}
+    ]
+
+    # Her calismada bu temalardan birini rastgele secer (boylece her seferinde farkli manifesto cikar)
+    selected = random.choice(video_themes)
+    print(f"Secilen Tema: {selected['title']}")
+
     try:
-        request = youtube.playlistItems().list(
-            part="snippet",
-            playlistId=uploads_playlist_id,
-            maxResults=1
-        )
-        res = request.execute()
-        
-        if not res.get('items'):
-            print("Hata: Kanal icerigi bos veya playlist bulunamadi.")
-            return
-
-        video_id = res['items'][0]['snippet']['resourceId']['videoId']
-        title = res['items'][0]['snippet']['title']
-        print(f"Basariyla Yakalandi -> Video ID: {video_id} | Baslik: {title}")
-
-        # Manifesto Uretimi
         print("Gemini'ye talimat gonderiliyor, manifesto uretiliyor...")
         prompt = (
-            f"Analyze this video concept. Title: {title}. "
-            f"Based on this, write a highly powerful, original, stoic, and authoritative video script manifesto in ENGLISH for a faceless YouTube channel. "
-            f"It must be unique, compelling, and ready for a professional voiceover narration."
+            f"Analyze this concepts. Title: {selected['title']}. Topic: {selected['topic']}. "
+            f"Based on this concept, write a highly powerful, original, stoic, and authoritative video script manifesto in ENGLISH for a faceless YouTube channel. "
+            f"It must be completely unique, intense, and ready for a professional voiceover narration."
         )
         
         response = model.generate_content(prompt)
