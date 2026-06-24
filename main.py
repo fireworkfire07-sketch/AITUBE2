@@ -17,25 +17,24 @@ def run():
     model = genai.GenerativeModel('gemini-1.5-flash')
     youtube = build('youtube', 'v3', developerKey=youtube_key)
 
-    # Kanal verilerini zorla çek
-    channel_id = "UCdM8w565v56jG6H-V3Y958g"
-    print(f"Hedef kanal taraniyor: {channel_id}")
+    # Kanal ID'sinin basindaki 'UC'yi 'UU' yaparak doğrudan yuklenenler listesine ulasiyoruz (Kotayi harcamaz)
+    uploads_playlist_id = "UUdM8w565v56jG6H-V3Y958g"
+    print(f"Oynatma listesinden en son video cekiliyor: {uploads_playlist_id}")
     
     try:
-        request = youtube.search().list(
-            part="snippet", 
-            channelId=channel_id, 
-            maxResults=1, 
-            order="date", 
-            type="video"
+        # Arama (search) yerine doğrudan playlistItems kullanıyoruz
+        request = youtube.playlistItems().list(
+            part="snippet",
+            playlistId=uploads_playlist_id,
+            maxResults=1
         )
         res = request.execute()
         
         if not res.get('items'):
-            print("YouTube API Yaniti Bos: Bu kanalda video bulunamadi veya API kotasi dolu.")
+            print("YouTube Playlist Yaniti Bos. Lutfen kanal ID'sini kontrol edin.")
             return
 
-        video_id = res['items'][0]['id']['videoId']
+        video_id = res['items'][0]['snippet']['resourceId']['videoId']
         title = res['items'][0]['snippet']['title']
         print(f"Basariyla Yakalandi -> Video ID: {video_id} | Baslik: {title}")
 
