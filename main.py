@@ -1,33 +1,23 @@
 import os
 import google.generativeai as genai
 from googleapiclient.discovery import build
+from youtube_transcript_api import YouTubeTranscriptApi
 
 def run():
-    # 1. Bağlantıları kur
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    youtube = build('youtube', 'v3', developerKey=os.environ["YOUTUBE_API_KEY"])
-
-    # 2. Videoyu çek
-    request = youtube.search().list(
-        part="snippet", 
-        channelId="UCdM8w565v56jG6H-V3Y958g", 
-        maxResults=1, 
-        order="date", 
-        type="video"
-    )
-    res = request.execute()
     
-    if not res.get('items'):
-        print("Kanalda video bulunamadı.")
-        return
-
-    video_title = res['items'][0]['snippet']['title']
+    # 1. Video ID'sini al
+    video_id = "VİDEO_ID_BURAYA" # Buraya videonun linkindeki kod gelecek
     
-    # 3. İçeriği üret
+    # 2. Transkripti çek
+    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
+    full_text = " ".join([i['text'] for i in transcript])
+    
+    # 3. Gemini ile işle
     model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(f"Video başlığı: {video_title}. Bu başlık için stoik ve otoriter bir manifesto yaz.")
+    response = model.generate_content(f"Video metni: {full_text[:10000]}. Bu içeriği temel alarak 10 dakikalık bir videoya uygun, otoriter ve stoik bir manifesto yaz.")
     
-    print("\n--- MANİFESTO ---")
+    print("\n--- TAM KAPSAMLI MANİFESTO ---")
     print(response.text)
 
 if __name__ == "__main__":
