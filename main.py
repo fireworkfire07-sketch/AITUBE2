@@ -16,7 +16,7 @@ def run():
     model = genai.GenerativeModel('gemini-1.5-flash')
     youtube = build('youtube', 'v3', developerKey=youtube_key)
 
-    # Gercek dogrulanmis Playlist ID (Kanal ID'sinin UC kismi UU yapildi)
+    # @thesolomonwealthcode kanalinin dogrulanmis Playlist ID'si
     uploads_playlist_id = "UU7fA_oT_U9E_I2RkXWwXmZQ"
     print(f"Oynatma listesinden en son video cekiliyor: {uploads_playlist_id}")
     
