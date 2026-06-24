@@ -7,22 +7,31 @@ def run():
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
     youtube = build('youtube', 'v3', developerKey=os.environ["YOUTUBE_API_KEY"])
 
-    # En son videoyu otomatik bul
-    res = youtube.search().list(part="id", channelId="UCdM8w565v56jG6H-V3Y958g", maxResults=1, order="date", type="video").execute()
-    video_id = res['items'][0]['id']['videoId']
+    # Kanalın ID'sini çözmek yerine direkt kanalın son videosunu alalım
+    res = youtube.search().list(part="snippet", channelId="UCdM8w565v56jG6H-V3Y958g", maxResults=1, order="date", type="video").execute()
     
-    # Transkripti çek
+    if not res.get('items'):
+        print("Video bulunamadı, kanal ID'sini kontrol et.")
+        return
+
+    video_info = res['items'][0]['snippet']
+    video_id = res['items'][0]['id']['videoId']
+    title = video_info['title']
+    
+    context = f"Başlık: {title}"
+    
     try:
+        # Transkripti dene
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['tr', 'en'])
         full_text = " ".join([i['text'] for i in transcript])
-        context = full_text[:10000] # Token sınırı için ilk 10k karakter
+        context += f". Video İçeriği: {full_text[:5000]}"
     except:
-        context = "Transkript alınamadı."
+        context += ". (Transkript kapalı, sadece başlığa göre analiz et.)"
 
     model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(f"Video metni: {context}. Bu içeriği analiz et ve derinlikli, stoik, otoriter bir manifesto yaz.")
+    response = model.generate_content(f"{context}. Bu veriyi analiz et ve stoik, otoriter bir manifesto yaz.")
     
-    print("\n--- TAM KAPSAMLI MANİFESTO ---")
+    print(f"\n--- {title} - ANALİZ ---")
     print(response.text)
 
 if __name__ == "__main__":
