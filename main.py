@@ -13,7 +13,8 @@ OUTPUT ONLY valid JSON. No markdown, no backticks, no control characters in stri
 {
  "title": "max 70 char curiosity-gap title",
  "hook": "1-2 spoken sentences for the first 3 seconds",
- "script": "1100 word narration, spoken style, second person, calm authoritative tone",
+ "script": "2200 word narration in spoken style, second person, calm authoritative tone, with smooth transitions between ideas, no repetition, building toward a strong conclusion",
+
  "description": "3 sentences then: #solomonwisdom #ancientwealth #wealthmindset #kingsolomon #money",
  "tags": ["solomon","wealth","money","wisdom","ancient","mindset","rich","success"],
  "image_prompts": ["scene 1, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 2, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 3, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 4, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 5, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 6, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 7, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 8, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text"]
