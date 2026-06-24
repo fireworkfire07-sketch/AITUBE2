@@ -3,33 +3,22 @@ import google.generativeai as genai
 from googleapiclient.discovery import build
 
 def run():
-    # 1. Bağlantıları kur
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
     youtube = build('youtube', 'v3', developerKey=os.environ["YOUTUBE_API_KEY"])
 
-    # 2. Videoyu güvenli bir şekilde çek
-    request = youtube.search().list(
-        part="snippet", 
-        channelId="UCdM8w565v56jG6H-V3Y958g", 
-        maxResults=1, 
-        order="date", 
-        type="video"
-    )
-    res = request.execute()
+    # Arama yerine kanalın videolarını doğrudan listele (Daha güvenilir)
+    print("Kanal videoları sorgulanıyor...")
+    request = youtube.channels().list(part="contentDetails", id="UCdM8w565v56jG6H-V3Y958g")
+    response = request.execute()
     
-    if not res.get('items'):
-        print("HATA: YouTube'da video bulunamadı.")
+    print(f"API Yanıtı: {response}") # <--- Kanal doğru mu, burada göreceğiz.
+
+    if 'items' not in response or not response['items']:
+        print("HATA: Kanal bulunamadı veya yetkisiz!")
         return
 
-    video_title = res['items'][0]['snippet']['title']
-    print(f"Alınan video: {video_title}")
-
-    # 3. İçeriği üret
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(f"Video başlığı: {video_title}. Bu başlık için otoriter ve stoik bir manifesto yaz.")
-    
-    print("\n--- SONUÇ ---")
-    print(response.text)
+    # Eğer buraya kadar gelirse kanal doğru demektir.
+    print("Kanal bulundu. Başarı!")
 
 if __name__ == "__main__":
     run()
