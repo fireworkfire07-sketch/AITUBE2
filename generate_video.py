@@ -11,7 +11,7 @@ from googleapiclient.http import MediaFileUpload
 # ===================== AYARLAR =====================
 GROQ_MODEL = "openai/gpt-oss-120b"   # llama-3.3-70b 17 Haziran 2026'da kapandı
 VOICE      = "en-US-ChristopherNeural"
-PRIVACY    = "public"                # İLK TEST için "private" yap
+PRIVACY    = "private"               # İLK TEST için private, sonra "public" yap
 CATEGORY   = "22"                    # 22=People&Blogs, 27=Education
 # ===================================================
 
@@ -86,7 +86,6 @@ def download_image(prompt, idx, folder):
         except Exception as ex:
             print(f"  img {idx} retry {attempt+1}: {ex}")
         time.sleep(5 * (attempt + 1))
-    # tüm denemeler başarısızsa düz renk kare (pipeline çökmesin)
     subprocess.run(["ffmpeg","-y","-f","lavfi","-i","color=c=0x1a1208:s=1792x1008",
                     "-frames:v","1",str(p)], check=True)
     return p
@@ -120,7 +119,7 @@ def upload_youtube(video_path, title, description, tags):
         client_secret=os.environ["YT_CLIENT_SECRET"],
         token_uri="https://oauth2.googleapis.com/token",
     )
-    creds.refresh(Request())  # token'ı erken doğrula
+    creds.refresh(Request())
     yt = build("youtube", "v3", credentials=creds)
     body = {
         "snippet": {"title": title[:95], "description": description,
@@ -170,7 +169,7 @@ def main():
     print("Uploading...")
     upload_youtube(video, data["title"], description, data["tags"])
 
-    mark_processed(topic)   # SADECE yükleme başarılıysa işaretle
+    mark_processed(topic)
     print("Done.")
 
 if __name__ == "__main__":
