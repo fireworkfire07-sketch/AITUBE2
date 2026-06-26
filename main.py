@@ -3,20 +3,24 @@ import requests
 from pathlib import Path
 import edge_tts
 
-API_KEY = os.environ["GROQ_API_KEY"]          # OpenRouter key
+API_KEY = os.environ["GROQ_API_KEY"]
 OUTPUT  = Path("output"); OUTPUT.mkdir(exist_ok=True)
 PROCESSED = Path("islenmis.txt")
 TOPICS    = Path("topics.txt")
 
-SYSTEM = """You are a scriptwriter for a faceless YouTube channel about King Solomon and ancient wealth wisdom.
+STYLE = "minimalist black ink stick figure line drawing on aged cream parchment paper, hand-drawn doodle style, simple, no color, vintage textured background, lots of empty space, 16:9, no text"
+
+SYSTEM = """You are a scriptwriter for a faceless YouTube channel about King Solomon and ancient wealth wisdom. The channel uses simple hand-drawn black-ink STICK FIGURE animations on aged parchment paper. Every visual is a VISUAL METAPHOR of the idea being narrated (e.g. a stick figure stacking blocks into a tower = building wealth; a stick figure running from a crowd = breaking from the herd).
+
 OUTPUT ONLY valid JSON. No markdown, no backticks, no control characters in strings.
 {
  "title": "max 70 char curiosity-gap title",
  "hook": "1-2 spoken sentences for the first 3 seconds",
- "script": "2200 word narration in spoken style, second person, calm authoritative tone, with smooth transitions between ideas, no repetition, building toward a strong conclusion",
+ "script": "2200 word narration in spoken style, second person, calm authoritative tone, smooth transitions, no repetition, building to a strong conclusion",
  "description": "3 sentences then: #solomonwisdom #ancientwealth #wealthmindset #kingsolomon #money",
  "tags": ["solomon","wealth","money","wisdom","ancient","mindset","rich","success"],
- "image_prompts": ["scene 1, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 2, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 3, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 4, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 5, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 6, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 7, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 8, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 9, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text","scene 10, ancient Jerusalem, warm gold light, painterly cinematic, 16:9, no text"]
+ "image_scenes": ["plain description of ONE stick-figure metaphor scene for beat 1, NO style words","scene 2 metaphor","scene 3 metaphor","scene 4 metaphor","scene 5 metaphor","scene 6 metaphor","scene 7 metaphor","scene 8 metaphor","scene 9 metaphor","scene 10 metaphor"],
+ "pinned_comment": "engaging question to drive comments"
 }"""
 
 def pick_topic():
@@ -50,7 +54,6 @@ def duration(p):
     return float(r.stdout.strip())
 
 def make_subs(audio, ass_path):
-    """faster-whisper ile sesten kelime-kelime altyazi (ASS), videoya gomulur"""
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -78,8 +81,9 @@ def make_subs(audio, ass_path):
     Path(ass_path).write_text("\n".join(head+lines), encoding="utf-8")
     return True
 
-def get_image(prompt, idx, folder):
-    seed = int(hashlib.md5(prompt.encode()).hexdigest(),16)%99999
+def get_image(scene, idx, folder):
+    prompt = f"{scene}, {STYLE}"
+    seed = int(hashlib.md5(scene.encode()).hexdigest(),16)%99999
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}?width=1792&height=1008&seed={seed}&nologo=true"
     r = requests.get(url, timeout=60); r.raise_for_status()
     p = folder/f"img_{idx:02d}.jpg"; p.write_bytes(r.content); return p
@@ -137,8 +141,9 @@ def main():
     print("Subtitles..."); ass = work/"subs.ass"
     make_subs(audio, ass)
 
-    print("Images..."); imgf = work/"img"; imgf.mkdir(exist_ok=True)
-    images = [get_image(p,i,imgf) for i,p in enumerate(data["image_prompts"][:10])]
+    print("Images (stick-figure)..."); imgf = work/"img"; imgf.mkdir(exist_ok=True)
+    scenes = data.get("image_scenes", [])[:10]
+    images = [get_image(sc, i, imgf) for i, sc in enumerate(scenes)]
 
     print("Render..."); video = work/"final.mp4"
     build(images, audio, ass, video, dur)
