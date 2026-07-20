@@ -25,6 +25,9 @@ OUTPUT ONLY valid JSON. No markdown, no backticks, no control characters in stri
 
 def pick_topic():
     done = set(PROCESSED.read_text().splitlines()) if PROCESSED.exists() else set()
+    forced = os.environ.get("FORCE_TOPIC", "").strip()
+    if forced:
+        return None if forced in done else forced
     topics = [t.strip() for t in TOPICS.read_text().splitlines() if t.strip()]
     rem = [t for t in topics if t not in done]
     return random.choice(rem) if rem else None
