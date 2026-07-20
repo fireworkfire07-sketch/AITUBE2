@@ -1,9 +1,14 @@
 name: Engine
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [new_topic]
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -11,9 +16,34 @@ jobs:
           python-version: '3.12'
       - run: pip install requests edge-tts faster-whisper google-api-python-client google-auth
       - run: sudo apt-get install -y ffmpeg
+      - name: Add dispatched topic to topics.txt
+        if: github.event_name == 'repository_dispatch'
+        env:
+          TOPIC: ${{ github.event.client_payload.topic }}
+        run: |
+          if [ -z "$TOPIC" ]; then
+            echo "client_payload.topic bos, durduruluyor." >&2
+            exit 1
+          fi
+          if ! grep -qxF "$TOPIC" topics.txt 2>/dev/null; then
+            echo "$TOPIC" >> topics.txt
+          fi
       - run: python main.py
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          FORCE_TOPIC: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.topic || '' }}
+      - name: Persist topics.txt and islenmis.txt
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add topics.txt islenmis.txt 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Kayit degisikligi yok."
+          else
+            git commit -m "Update topics and processed log"
+            git push
+          fi
