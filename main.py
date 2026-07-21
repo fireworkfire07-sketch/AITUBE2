@@ -4,6 +4,7 @@ from pathlib import Path
 import edge_tts
 
 API_KEY = os.environ["GROQ_API_KEY"]
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OUTPUT  = Path("output"); OUTPUT.mkdir(exist_ok=True)
 PROCESSED = Path("islenmis.txt")
 TOPICS    = Path("topics.txt")
@@ -33,9 +34,10 @@ def pick_topic():
     return random.choice(rem) if rem else None
 
 def generate(topic):
-    r = requests.post("https://openrouter.ai/api/v1/chat/completions",
+    r = requests.post("https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {API_KEY}", "Content-Type":"application/json"},
-        json={"model":"meta-llama/llama-3.3-70b-instruct","temperature":0.7,"max_tokens":8000,
+        json={"model":GROQ_MODEL,"temperature":0.7,"max_tokens":8000,
+              "response_format":{"type":"json_object"},
               "messages":[{"role":"system","content":SYSTEM},{"role":"user","content":f"Topic: {topic}"}]},
         timeout=180)
     r.raise_for_status()
