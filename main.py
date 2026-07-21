@@ -5,6 +5,7 @@ import edge_tts
 
 API_KEY = os.environ["GROQ_API_KEY"]
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+UPLOAD_ENABLED = os.environ.get("UPLOAD_ENABLED", "false").strip().lower() == "true"
 OUTPUT  = Path("output"); OUTPUT.mkdir(exist_ok=True)
 PROCESSED = Path("islenmis.txt")
 TOPICS    = Path("topics.txt")
@@ -154,7 +155,10 @@ def main():
     build(images, audio, ass, video, dur)
 
     meta = {"title":data["title"],"description":data["description"],"tags":",".join(data["tags"])}
-    print("Upload..."); upload(video, meta)
+    if UPLOAD_ENABLED:
+        print("Upload..."); upload(video, meta)
+    else:
+        print(f"Video hazir, upload atlandi: {video}")
 
     with open(PROCESSED,"a") as f: f.write(topic+"\n")
     print("OK")
