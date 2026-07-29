@@ -1,7 +1,8 @@
-import os, json, re, random, hashlib, asyncio, subprocess
+import io, os, json, re, random, hashlib, asyncio, subprocess
 import requests
 from pathlib import Path
 import edge_tts
+from PIL import Image, ImageDraw, ImageFont
 
 API_KEY = os.environ["GROQ_API_KEY"]
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -11,6 +12,11 @@ PROCESSED = Path("islenmis.txt")
 TOPICS    = Path("topics.txt")
 
 STYLE = "minimalist black ink stick figure line drawing on aged cream parchment paper, hand-drawn doodle style, simple, no color, vintage textured background, lots of empty space, 16:9, no text"
+
+FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+]
 
 SYSTEM = """You are a scriptwriter for a faceless YouTube channel about King Solomon and ancient wealth wisdom. The channel uses simple hand-drawn black-ink STICK FIGURE animations on aged parchment paper. Every visual is a VISUAL METAPHOR of the idea being narrated (e.g. a stick figure stacking blocks into a tower = building wealth; a stick figure running from a crowd = breaking from the herd).
 
@@ -94,6 +100,84 @@ def get_image(scene, idx, folder):
     r = requests.get(url, timeout=60); r.raise_for_status()
     p = folder/f"img_{idx:02d}.jpg"; p.write_bytes(r.content); return p
 
+def thumbnail_metni(data):
+    metin = str(data.get("thumbnail_text", "")).strip()
+    if metin:
+        return metin
+    kelimeler = str(data.get("title", "")).split()[:5]
+    return " ".join(kelimeler) if kelimeler else "Ancient Wealth Wisdom"
+
+def _thumbnail_font(boyut):
+    for yol in FONT_CANDIDATES:
+        if os.path.exists(yol):
+            return ImageFont.truetype(yol, boyut)
+    return ImageFont.load_default()
+
+def _wrap_lines(draw, text, font, max_width):
+    words = text.upper().split()
+    lines, current = [], ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width or not current:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+def make_thumbnail(scene, text, out, deneme=5):
+    prompt = f"{scene}, {STYLE}"
+    seed = int(hashlib.md5(scene.encode()).hexdigest(), 16) % 99999
+    url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}?width=1280&height=720&seed={seed}&nologo=true"
+    bg = None
+    for i in range(deneme):
+        try:
+            r = requests.get(url, timeout=60)
+            if r.ok and len(r.content) > 10000:
+                bg = Image.open(io.BytesIO(r.content)).convert("RGB").resize((1280, 720))
+                break
+            raise ValueError(f"kotu cevap: {r.status_code}, {len(r.content)} byte")
+        except Exception as e:
+            print(f"  thumbnail arka plani deneme {i+1}/{deneme} hata: {e}")
+    if bg is None:
+        print("  thumbnail arka plani uretilemedi, duz renkli zemin kullaniliyor")
+        bg = Image.new("RGB", (1280, 720), (235, 225, 200))
+
+    draw = ImageDraw.Draw(bg)
+    size = 130
+    lines = [text.upper()]
+    while size > 40:
+        font = _thumbnail_font(size)
+        lines = _wrap_lines(draw, text, font, 1150)
+        line_h = size + 20
+        if len(lines) <= 3 and len(lines) * line_h <= 600:
+            break
+        size -= 10
+    font = _thumbnail_font(size)
+    line_h = size + 20
+    total_h = len(lines) * line_h
+    y = (720 - total_h) // 2
+
+    overlay = Image.new("RGBA", bg.size, (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rectangle(
+        [(0, max(0, y - 30)), (1280, min(720, y + total_h + 10))],
+        fill=(0, 0, 0, 140),
+    )
+    bg = Image.alpha_composite(bg.convert("RGBA"), overlay).convert("RGB")
+    draw = ImageDraw.Draw(bg)
+
+    for line in lines:
+        w = draw.textbbox((0, 0), line, font=font)[2]
+        x = (1280 - w) // 2
+        draw.text((x, y), line, font=font, fill="white", stroke_width=max(4, size // 20), stroke_fill="black")
+        y += line_h
+
+    bg.save(out, "JPEG", quality=92)
+    return out
+
 def build(images, audio, ass_path, out, dur):
     n = len(images); per = dur/n; inp = []
     for img in images: inp += ["-loop","1","-t",str(per),"-i",str(img)]
@@ -108,10 +192,11 @@ def build(images, audio, ass_path, out, dur):
         "-map","[vout]","-map","[aout]","-c:v","libx264","-preset","fast","-crf","23",
         "-c:a","aac","-b:a","192k","-r","25","-pix_fmt","yuv420p",str(out)], check=True)
 
-def upload(video, meta):
+def upload(video, meta, thumbnail=None):
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build as gbuild
     from googleapiclient.http import MediaFileUpload
+    from googleapiclient.errors import HttpError
     creds = Credentials(token=None,
         refresh_token=os.environ["YT_REFRESH_TOKEN"],
         client_id=os.environ["YT_CLIENT_ID"],
@@ -128,7 +213,17 @@ def upload(video, meta):
     while resp is None:
         status, resp = req.next_chunk()
         if status: print(f"  upload {int(status.progress()*100)}%")
-    print(f"DONE: https://youtu.be/{resp['id']}")
+    video_id = resp["id"]
+    print(f"DONE: https://youtu.be/{video_id}")
+
+    if thumbnail and Path(thumbnail).exists():
+        try:
+            yt.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(thumbnail))).execute()
+            print("  thumbnail ayarlandi")
+        except HttpError as e:
+            print(f"  UYARI: thumbnail ayarlanamadi (kanal dogrulanmamis olabilir, HTTP {e.status_code}): {e}")
+        except Exception as e:
+            print(f"  UYARI: thumbnail ayarlanirken beklenmeyen hata: {e}")
 
 def main():
     topic = pick_topic()
@@ -154,9 +249,16 @@ def main():
     print("Render..."); video = work/"final.mp4"
     build(images, audio, ass, video, dur)
 
+    print("Thumbnail...")
+    thumb_metin = thumbnail_metni(data)
+    thumb_scene = scenes[0] if scenes else thumb_metin
+    thumbnail = work/"thumbnail.jpg"
+    make_thumbnail(thumb_scene, thumb_metin, thumbnail)
+    print(f"  thumbnail hazir: {thumbnail} ('{thumb_metin}')")
+
     meta = {"title":data["title"],"description":data["description"],"tags":",".join(data["tags"])}
     if UPLOAD_ENABLED:
-        print("Upload..."); upload(video, meta)
+        print("Upload..."); upload(video, meta, thumbnail)
     else:
         print(f"Video hazir, upload atlandi: {video}")
 
