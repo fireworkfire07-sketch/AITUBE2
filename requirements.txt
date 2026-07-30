@@ -1,0 +1,6 @@
+requests
+edge-tts
+faster-whisper
+google-api-python-client
+google-auth
+Pillow
