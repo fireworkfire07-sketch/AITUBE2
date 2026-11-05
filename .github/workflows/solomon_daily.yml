@@ -11,7 +11,7 @@ on:
     types: [new_topic]
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: write
