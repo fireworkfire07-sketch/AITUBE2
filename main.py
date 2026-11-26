@@ -204,6 +204,22 @@ def upload(video, meta, thumbnail=None):
         token_uri="https://oauth2.googleapis.com/token",
         scopes=["https://www.googleapis.com/auth/youtube.upload"])
     yt = gbuild("youtube","v3",credentials=creds)
+    # Yanlis kanal kilidi: Solomon videolari Kasim 2026'ya kadar Bitkilerin Gizli Tarihi kanalina gitti.
+    # Repo Variables > YT_EXPECTED_CHANNEL = hedef kanalin tam adi. Dogrulanamazsa yukleme yapilmaz.
+    want = os.environ.get("YT_EXPECTED_CHANNEL", "").strip()
+    if not want:
+        raise SystemExit("YUKLEME DURDURULDU: YT_EXPECTED_CHANNEL tanimli degil (repo Variables). "
+                         "Bu token daha once yanlis kanala (Bitkilerin Gizli Tarihi) yukledi.")
+    try:
+        items = yt.channels().list(part="snippet", mine=True).execute().get("items", [])
+        got = items[0]["snippet"]["title"] if items else "(kanal yok)"
+    except HttpError as e:
+        raise SystemExit(f"YUKLEME DURDURULDU: kanal dogrulanamadi (HTTP {e.status_code}). Token'i "
+                         "'youtube.readonly' izniyle yeniden al ve dogru kanali sec.")
+    if got.casefold() != want.casefold():
+        raise SystemExit(f"YUKLEME DURDURULDU: token '{got}' kanalina bagli, '{want}' olmali. "
+                         "YT_REFRESH_TOKEN'i dogru kanalla yeniden al.")
+    print(f"  kanal dogrulandi: {got}")
     body = {"snippet":{"title":meta["title"],"description":meta["description"],
             "tags":meta["tags"].split(","),"categoryId":"27","defaultLanguage":"en"},
             "status":{"privacyStatus":"public","selfDeclaredMadeForKids":False,"containsSyntheticMedia":True}}

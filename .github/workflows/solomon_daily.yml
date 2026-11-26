@@ -41,6 +41,7 @@ jobs:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_EXPECTED_CHANNEL: ${{ vars.YT_EXPECTED_CHANNEL }}
           FORCE_TOPIC: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.topic || '' }}
           UPLOAD_ENABLED: ${{ github.event_name == 'repository_dispatch' && 'true' || inputs.upload_enabled }}
       - name: Upload test outputs
